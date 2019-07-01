@@ -1,0 +1,122 @@
+# Painless deployment with GitLab CI.
+# Visit the docs at https://docs.gitlab.com/ce/ci/
+
+variables:
+  DOCKER_DRIVER: overlay2
+  DOCKER_REGISTRY: hub.docker.com/prabha6kar
+  DOCKER_HOST: tcp://docker:2375
+  OPENSHIFT_CONSOLE: https://console.appuio.ch
+  APP_NAME: poc_owm_iot
+
+services:
+  - name: docker:dind
+
+stages:
+- check
+- test
+- build
+- deploy
+
+.check:
+  stage: check
+  image: docker.io/painless/tox
+  only:
+  - merge_requests
+  - master
+
+.test:
+  stage: test
+  image: docker.io/painless/tox
+  only:
+  - merge_requests
+  - master
+
+
+.build:
+  stage: build
+  image: docker.io/library/docker
+  script:
+  - IMAGE="${DOCKER_REGISTRY}/${REGISTRY_PROJECT}/${APP_NAME}:${CI_COMMIT_SHA}"
+
+  - docker build -t "${IMAGE}" -f "deployment/${COMPONENT}/Dockerfile" .
+  - docker login -u gitlab-ci -p ${KUBE_TOKEN} https://${DOCKER_REGISTRY}
+  - docker push "${IMAGE}"
+  environment:
+    name: development
+
+.deploy:
+  stage: deploy
+  image: docker.io/appuio/oc:v3.9
+  script:
+  - CLI="oc -n ${TARGET}"
+
+  - $CLI get secret postgres ||
+    $CLI process -f deployment/postgres-secrets.yaml |
+    $CLI apply --overwrite -f -
+  - $CLI get secret application ||
+    $CLI process -f deployment/application-secrets.yaml |
+    $CLI apply --overwrite -f -
+  - $CLI tag "${SOURCE}/${APP_NAME}:${CI_COMMIT_SHA}"
+             "${TARGET}/${APP_NAME}:${CI_COMMIT_SHA}"
+  - $CLI process --param-file=deployment/envs/${ENVIRONMENT} -p APP_TAG=${CI_COMMIT_SHA} -f deployment/postgres.yaml |
+    $CLI apply --overwrite -f -
+  - $CLI process --param-file=deployment/envs/${ENVIRONMENT} -p APP_TAG=${CI_COMMIT_SHA} -f deployment/application.yaml |
+    $CLI apply --overwrite -f -
+  - $CLI plugin cleanup ${APP_NAME} --git-repo-path="$PWD" --force=y
+
+flake8:
+  extends: .check
+  script: tox -e flake8
+
+py36:
+  extends: .test
+  script: tox -e py36
+
+py37:
+  extends: .test
+  script: tox -e py37
+
+application:
+  extends: .build
+  variables:
+    COMPONENT: application
+    REGISTRY_PROJECT: poc_owm_iot-dev
+  only:
+  - merge_requests
+  - master
+
+development:
+  extends: .deploy
+  environment:
+    name: development
+    url: https://console.appuio.ch/console/project/poc_owm_iot-dev/overview
+  variables:
+    ENVIRONMENT: development
+    SOURCE: poc_owm_iot-dev
+    TARGET: poc_owm_iot-dev
+  only:
+  - merge_requests
+
+integration:
+  extends: .deploy
+  environment:
+    name: integration
+    url: https://console.appuio.ch/console/project/poc_owm_iot-int/overview
+  variables:
+    ENVIRONMENT: integration
+    SOURCE: poc_owm_iot-dev
+    TARGET: poc_owm_iot-int
+  only:
+  - master
+
+production:
+  extends: .deploy
+  environment:
+    name: production
+    url: https://console.appuio.ch/console/project/poc_owm_iot-prod/overview
+  variables:
+    ENVIRONMENT: production
+    SOURCE: poc_owm_iot-int
+    TARGET: poc_owm_iot-prod
+  only:
+  - tags
