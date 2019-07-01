@@ -1,0 +1,37 @@
+# Painless local development with Docker Compose.
+# Visit the docs at https://docs.docker.com/compose/
+
+version: '3'
+
+services:
+  application:
+    build:
+      context: .
+      dockerfile: deployment/application/Dockerfile
+      args:
+        REQUIREMENTS: requirements/development.in
+    environment:
+      - DJANGO_DEBUG=True
+    command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+    ports:
+      - "8000:8000"
+    user: "${UID:-1000}:0"
+    volumes:
+      - .:/app
+    restart: on-failure
+    depends_on:
+      - database
+
+  database:
+    image: docker.io/library/mariadb
+    environment:
+      MYSQL_ROOT_PASSWORD: secret
+      MYSQL_DATABASE: mysql
+      MYSQL_USER: mysql
+      MYSQL_PASSWORD: mysql
+    volumes:
+      - database_data:/var/lib/mysql/data
+
+volumes:
+  database_data:
+    driver: local
