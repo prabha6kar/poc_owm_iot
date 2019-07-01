@@ -1,7 +1,11 @@
 poc_owm_iot
 ===========
 
+<<<<<<< HEAD
 ZTLs POC on OWM and IOT devices
+=======
+ZTLs POC on OWM and IOT devices - added POC code
+>>>>>>> UploadPOC
 
 Getting Started
 ---------------

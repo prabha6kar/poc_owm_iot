@@ -1,1 +1,5 @@
 -r requirements/production.txt
+<<<<<<< HEAD
+=======
+-r requirements/app_requirements.txt
+>>>>>>> UploadPOC
